@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Pronunciation Matching</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 50px;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+        audio {
+            margin-top: 20px;
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Advanced Pronunciation Matching</h1>
+
+<p>Listen to the word:</p>
+<audio id="preloadedAudio" controls>
+    <source src="fingers.mp3" type="audio/mp3">
+    Your browser does not support the audio element.
+</audio>
+
+<p>Record your pronunciation:</p>
+<button id="recordButton">Start Recording</button>
+<button id="stopButton" disabled>Stop Recording</button>
+
+<audio id="userAudio" controls></audio>
+
+<button id="compareButton" disabled>Compare Pronunciation</button>
+
+<div id="result"></div>
+
+<script>
+    // Variables for audio recording and processing
+    let mediaRecorder;
+    let recordedBlobs;
+    let audioContext;
+    let analyser;
+    let frequencyData;
+
+    const recordButton = document.getElementById('recordButton');
+    const stopButton = document.getElementById('stopButton');
+    const compareButton = document.getElementById('compareButton');
+    const userAudio = document.getElementById('userAudio');
+    const resultDiv = document.getElementById('result');
+    const preloadedAudio = document.getElementById('preloadedAudio');
+
+    // Event listeners for buttons
+    recordButton.addEventListener('click', startRecording);
+    stopButton.addEventListener('click', stopRecording);
+    compareButton.addEventListener('click', compareAudio);
+
+    // Start recording
+    function startRecording() {
+        recordedBlobs = [];
+        const constraints = { audio: true };
+
+        navigator.mediaDevices.getUserMedia(constraints)
+            .then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = handleDataAvailable;
+                mediaRecorder.start();
+                recordButton.disabled = true;
+                stopButton.disabled = false;
+                resultDiv.textContent = 'Recording...';
+            })
+            .catch(error => {
+                console.error('Error accessing media devices.', error);
+                resultDiv.textContent = 'Error accessing microphone. Please ensure the microphone is enabled and try again.';
+            });
+    }
+
+    // Stop recording
+    function stopRecording() {
+        if (mediaRecorder) {
+            mediaRecorder.stop();
+            stopButton.disabled = true;
+            recordButton.disabled = false;
+            compareButton.disabled = false;
+            resultDiv.textContent = 'Recording stopped. Ready to compare.';
+        } else {
+            console.error('No active recorder found.');
+        }
+    }
+
+    // Handle recorded data
+    function handleDataAvailable(event) {
+        if (event.data && event.data.size > 0) {
+            recordedBlobs.push(event.data);
+        }
+        const superBuffer = new Blob(recordedBlobs, { type: 'audio/webm' });
+        userAudio.src = window.URL.createObjectURL(superBuffer);
+    }
+
+    // Compare audio frequencies
+    async function compareAudio() {
+        try {
+            const preloadedBuffer = await loadAudioBuffer(preloadedAudio.querySelector('source').src);
+            const recordedBuffer = await loadAudioBuffer(userAudio.src);
+
+            const preloadedFreqData = getFrequencyData(preloadedBuffer);
+            const recordedFreqData = getFrequencyData(recordedBuffer);
+
+            const similarity = calculateCrossCorrelation(preloadedFreqData, recordedFreqData);
+
+            if (similarity > 0.8) {
+                resultDiv.textContent = 'The pronunciations are similar!';
+            } else {
+                resultDiv.textContent = 'The pronunciations are different.';
+            }
+        } catch (error) {
+            console.error('Error during comparison:', error);
+            resultDiv.textContent = 'Error comparing audio. Please try again.';
+        }
+    }
+
+    // Load audio buffer
+    async function loadAudioBuffer(url) {
+        try {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return await audioContext.decodeAudioData(arrayBuffer);
+        } catch (error) {
+            console.error('Error loading audio buffer:', error);
+            resultDiv.textContent = 'Error loading audio. Please check the audio file and try again.';
+        }
+    }
+
+    // Get frequency data from audio buffer
+    function getFrequencyData(audioBuffer) {
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        frequencyData = new Float32Array(analyser.frequencyBinCount);
+
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
+        source.start(0);
+        analyser.getFloatFrequencyData(frequencyData);
+
+        return frequencyData;
+    }
+
+    // Calculate similarity using cross-correlation
+    function calculateCrossCorrelation(data1, data2) {
+        let sum = 0;
+        let total = data1.length;
+        for (let i = 0; i < total; i++) {
+            sum += (data1[i] * data2[i]);
+        }
+        return sum / total;
+    }
+</script>
+
+</body>
+</html>
